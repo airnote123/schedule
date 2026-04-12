@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PLANNER Pro - Mobile Friendly</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root {
+            --cell-height: 48px;
+            --time-col-width: 60px;
+        }
+        .grid-header {
+            display: grid;
+            grid-template-columns: var(--time-col-width) repeat(var(--cols), 1fr);
+            border-bottom: 2px solid #e5e7eb;
+            position: sticky;
+            top: 0;
+            z-index: 30;
+            background: #f9fafb;
+        }
+        .grid-body {
+            display: grid;
+            grid-template-columns: var(--time-col-width) repeat(var(--cols), 1fr);
+            position: relative;
+        }
+        .time-cell {
+            height: var(--cell-height);
+            border-right: 2px solid #e5e7eb;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            color: #9ca3af;
+            background: #f9fafb;
+            font-weight: 600;
+        }
+        .schedule-cell {
+            height: var(--cell-height);
+            border-right: 1px solid #e5e7eb;
+            border-bottom: 1px solid #e5e7eb;
+            cursor: pointer;
+            position: relative;
+            background: white;
+            transition: background 0.2s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .schedule-cell.selected {
+            background-color: #dbeafe !important;
+            box-shadow: inset 0 0 0 2px #3b82f6;
+            z-index: 10;
+        }
+        .event-block {
+            position: absolute;
+            z-index: 20;
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 0.85rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid rgba(0,0,0,0.05);
+            font-weight: 600;
+            line-height: 1.2;
+        }
+        .view-tab.active {
+            background: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            color: #2563eb;
+        }
+        .day-sun { color: #ef4444 !important; }
+        .day-sat { color: #3b82f6 !important; }
+
+        /* カラー選択ドット (モーダル内) */
+        .modal-color-dot {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 3px solid transparent;
+            transition: transform 0.2s;
+        }
+        .modal-color-dot.active {
+            border-color: #3b82f6;
+            transform: scale(1.1);
+        }
+
+        /* 選択モード時のアニメーション */
+        .selection-active-btn {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen select-none overflow-x-hidden">
+
+    <div class="max-w-7xl mx-auto bg-white shadow-lg min-h-screen flex flex-col border-x">
+        <!-- Header -->
+        <header class="p-3 border-b bg-white flex flex-col gap-3 sticky top-0 z-40 shadow-sm">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">P</div>
+                    <h1 class="text-lg font-black tracking-tight hidden sm:block">PLANNER Pro</h1>
+                    <input type="date" id="datePicker" class="border rounded-lg px-2 py-1 text-sm font-bold bg-gray-50 outline-none">
+                </div>
+                <div class="flex bg-gray-100 rounded-xl p-1 gap-1">
+                    <button onclick="changeView('day')" id="dayTab" class="view-tab px-4 py-1 text-xs font-bold rounded-lg active">1日</button>
+                    <button onclick="changeView('week')" id="weekTab" class="view-tab px-4 py-1 text-xs font-bold rounded-lg">週間</button>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between border-t pt-2">
+                <div class="flex gap-2">
+                    <button id="selectionModeBtn" onclick="toggleSelectionMode()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold flex items-center gap-2 transition-all">
+                        <span id="selectIcon">🔘</span> 範囲を選択
+                    </button>
+                    <button id="actionBtn" onclick="handleAction()" class="hidden px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-black shadow-lg shadow-blue-100 transition-all">
+                        結合して作成
+                    </button>
+                </div>
+                <div id="syncIndicator" class="text-[9px] font-mono text-gray-400 uppercase tracking-widest">Connect...</div>
+            </div>
+        </header>
+
+        <!-- Grid -->
+        <div class="flex-grow overflow-auto" id="scrollContainer">
+            <div id="gridHeader" class="grid-header"></div>
+            <div id="gridBody" class="grid-body"></div>
+        </div>
+    </div>
+
+    <!-- Modal (Edit & Create) -->
+    <div id="editModal" class="fixed inset-0 bg-black/60 hidden z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-sm">
+        <div class="bg-white rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-md shadow-2xl border border-gray-100 animate-in slide-in-from-bottom duration-300">
+            <div class="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6 sm:hidden"></div>
+            <h3 class="text-xl font-black text-gray-800 mb-6" id="modalTitle">予定の登録</h3>
+            
+            <label class="block text-xs font-black text-gray-400 uppercase tracking-wider mb-2">内容</label>
+            <textarea id="eventNote" class="w-full border-2 border-gray-100 p-4 rounded-2xl mb-6 h-32 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-gray-50 resize-none font-medium" placeholder="何をする予定ですか？"></textarea>
+            
+            <label class="block text-xs font-black text-gray-400 uppercase tracking-wider mb-2">カラー</label>
+            <div class="flex gap-3 mb-8" id="modalColorPalette"></div>
+
+            <div class="flex flex-col gap-3">
+                <button onclick="saveEvent()" class="w-full bg-blue-600 text-white py-4 rounded-2xl text-base font-black hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all active:scale-95">
+                    保存する
+                </button>
+                <div class="flex justify-between items-center mt-2 px-1">
+                    <button id="deleteBtn" onclick="deleteEvent()" class="text-red-500 text-sm font-bold opacity-0 pointer-events-none transition-opacity">削除</button>
+                    <button onclick="closeModal()" class="text-gray-400 text-sm font-bold">キャンセル</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://qfzyrogwyjbzbblnvqzy.supabase.co/';
+        const SUPABASE_KEY = 'sb_publishable_tXLLvKe_L-27OsGU-GH3Zw_176oxBqw';
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        const colors = [
+            { bg: '#E0F2FE', text: '#0369A1', hex: '#0ea5e9' },
+            { bg: '#DCFCE7', text: '#15803D', hex: '#22c55e' },
+            { bg: '#FEF9C3', text: '#A16207', hex: '#eab308' },
+            { bg: '#FFEDD5', text: '#C2410C', hex: '#f97316' },
+            { bg: '#FEE2E2', text: '#B91C1C', hex: '#ef4444' },
+            { bg: '#F3E8FF', text: '#7E22CE', hex: '#a855f7' }
+        ];
+
+        let currentView = 'day';
+        let isSelectionMode = false;
+        let selectedCells = [];
+        let events = [];
+        let currentEditingEvent = null;
+        let tempSelectedColor = colors[0];
+
+        const datePicker = document.getElementById('datePicker');
+        const gridHeader = document.getElementById('gridHeader');
+        const gridBody = document.getElementById('gridBody');
+        const syncIndicator = document.getElementById('syncIndicator');
+
+        datePicker.value = new Date().toISOString().split('T')[0];
+
+        async function startApp() {
+            renderGrid();
+            await fetchEvents();
+            setupRealtimeSync();
+            initModalColors();
+        }
+
+        function initModalColors() {
+            const palette = document.getElementById('modalColorPalette');
+            palette.innerHTML = '';
+            colors.forEach(c => {
+                const dot = document.createElement('div');
+                dot.className = 'modal-color-dot';
+                dot.style.backgroundColor = c.hex;
+                dot.onclick = () => {
+                    tempSelectedColor = c;
+                    updateModalColorActive();
+                };
+                palette.appendChild(dot);
+            });
+            updateModalColorActive();
+        }
+
+        function updateModalColorActive() {
+            document.querySelectorAll('.modal-color-dot').forEach((dot, i) => {
+                dot.classList.toggle('active', colors[i].hex === tempSelectedColor.hex);
+            });
+        }
+
+        async function fetchEvents() {
+            const { data } = await supabaseClient.from('events').select('*');
+            events = data || [];
+            renderEvents();
+            syncIndicator.textContent = "Synced";
+        }
+
+        function setupRealtimeSync() {
+            supabaseClient.channel('db-changes').on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, fetchEvents).subscribe();
+        }
+
+        function changeView(view) {
+            currentView = view;
+            document.getElementById('dayTab').classList.toggle('active', view === 'day');
+            document.getElementById('weekTab').classList.toggle('active', view === 'week');
+            renderGrid();
+        }
+
+        function toggleSelectionMode() {
+            isSelectionMode = !isSelectionMode;
+            const btn = document.getElementById('selectionModeBtn');
+            const actionBtn = document.getElementById('actionBtn');
+            const icon = document.getElementById('selectIcon');
+
+            if (isSelectionMode) {
+                btn.classList.add('bg-blue-600', 'text-white', 'selection-active-btn');
+                btn.classList.remove('bg-gray-100', 'text-gray-700');
+                icon.textContent = "✅";
+                actionBtn.classList.remove('hidden');
+            } else {
+                btn.classList.remove('bg-blue-600', 'text-white', 'selection-active-btn');
+                btn.classList.add('bg-gray-100', 'text-gray-700');
+                icon.textContent = "🔘";
+                actionBtn.classList.add('hidden');
+                clearSelection();
+            }
+        }
+
+        function renderGrid() {
+            const startDate = new Date(datePicker.value);
+            const daysToShow = currentView === 'day' ? 1 : 7;
+            document.documentElement.style.setProperty('--cols', daysToShow);
+
+            gridHeader.innerHTML = '<div class="time-cell border-b-2">TIME</div>';
+            for (let i = 0; i < daysToShow; i++) {
+                const d = new Date(startDate);
+                d.setDate(startDate.getDate() + i);
+                const dayOfWeek = d.getDay();
+                const dayLabel = document.createElement('div');
+                dayLabel.className = `py-3 text-center border-r flex flex-col justify-center font-black`;
+                
+                let colorClass = d.toISOString().split('T')[0] === new Date().toISOString().split('T')[0] ? 'text-blue-600' : '';
+                if (dayOfWeek === 0) colorClass = 'day-sun';
+                if (dayOfWeek === 6) colorClass = 'day-sat';
+
+                dayLabel.innerHTML = `
+                    <span class="text-[9px] uppercase tracking-tighter ${colorClass || 'text-gray-400'}">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dayOfWeek]}</span>
+                    <span class="text-sm ${colorClass || 'text-gray-800'}">${d.getMonth()+1}/${d.getDate()}</span>
+                `;
+                gridHeader.appendChild(dayLabel);
+            }
+
+            gridBody.innerHTML = '';
+            for (let hour = 0; hour < 24; hour++) {
+                for (let min of [0, 30]) {
+                    const timeStr = `${hour.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`;
+                    const timeLabel = document.createElement('div');
+                    timeLabel.className = 'time-cell';
+                    timeLabel.textContent = min === 0 ? timeStr : '';
+                    gridBody.appendChild(timeLabel);
+
+                    for (let dayOffset = 0; dayOffset < daysToShow; dayOffset++) {
+                        const cellDate = new Date(startDate);
+                        cellDate.setDate(startDate.getDate() + dayOffset);
+                        const cell = document.createElement('div');
+                        cell.className = 'schedule-cell';
+                        cell.dataset.date = cellDate.toISOString().split('T')[0];
+                        cell.dataset.index = (hour * 2) + (min === 30 ? 1 : 0);
+                        cell.onclick = () => handleCellClick(cell);
+                        gridBody.appendChild(cell);
+                    }
+                }
+            }
+            renderEvents();
+        }
+
+        function handleCellClick(cell) {
+            if (isSelectionMode) {
+                const idx = selectedCells.indexOf(cell);
+                if (idx > -1) {
+                    cell.classList.remove('selected');
+                    selectedCells.splice(idx, 1);
+                } else {
+                    // 同日のみ選択可能
+                    if (selectedCells.length > 0 && selectedCells[0].dataset.date !== cell.dataset.date) {
+                        clearSelection();
+                    }
+                    cell.classList.add('selected');
+                    selectedCells.push(cell);
+                }
+            } else {
+                // 通常タップ：その枠だけで作成
+                openCreateModal(cell.dataset.date, parseInt(cell.dataset.index), parseInt(cell.dataset.index));
+            }
+        }
+
+        function handleAction() {
+            if (selectedCells.length === 0) return;
+            selectedCells.sort((a, b) => parseInt(a.dataset.index) - parseInt(b.dataset.index));
+            const first = selectedCells[0];
+            const last = selectedCells[selectedCells.length - 1];
+            openCreateModal(first.dataset.date, parseInt(first.dataset.index), parseInt(last.dataset.index));
+        }
+
+        function openCreateModal(date, start, end) {
+            currentEditingEvent = { id: crypto.randomUUID(), date, startIndex: start, endIndex: end, text: "", color: tempSelectedColor };
+            document.getElementById('modalTitle').textContent = "予定の登録";
+            document.getElementById('eventNote').value = "";
+            document.getElementById('deleteBtn').style.opacity = "0";
+            document.getElementById('deleteBtn').style.pointerEvents = "none";
+            document.getElementById('editModal').classList.remove('hidden');
+        }
+
+        function openEditModal(ev) {
+            currentEditingEvent = { ...ev };
+            tempSelectedColor = ev.color;
+            updateModalColorActive();
+            document.getElementById('modalTitle').textContent = "予定の編集";
+            document.getElementById('eventNote').value = ev.text;
+            document.getElementById('deleteBtn').style.opacity = "1";
+            document.getElementById('deleteBtn').style.pointerEvents = "auto";
+            document.getElementById('editModal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('editModal').classList.add('hidden');
+            if (isSelectionMode) toggleSelectionMode();
+            clearSelection();
+        }
+
+        function clearSelection() {
+            document.querySelectorAll('.schedule-cell').forEach(c => c.classList.remove('selected'));
+            selectedCells = [];
+        }
+
+        async function saveEvent() {
+            currentEditingEvent.text = document.getElementById('eventNote').value;
+            currentEditingEvent.color = tempSelectedColor;
+            await supabaseClient.from('events').upsert(currentEditingEvent);
+            closeModal();
+            fetchEvents();
+        }
+
+        async function deleteEvent() {
+            if (!currentEditingEvent) return;
+            await supabaseClient.from('events').delete().eq('id', currentEditingEvent.id);
+            closeModal();
+            fetchEvents();
+        }
+
+        function renderEvents() {
+            document.querySelectorAll('.event-block').forEach(b => b.remove());
+            const startDate = new Date(datePicker.value);
+            const daysToShow = currentView === 'day' ? 1 : 7;
+            const endDate = new Date(startDate);
+            endDate.setDate(startDate.getDate() + daysToShow);
+
+            events.forEach(ev => {
+                const evDate = new Date(ev.date);
+                if (evDate >= startDate && evDate < endDate) {
+                    const block = document.createElement('div');
+                    block.className = 'event-block';
+                    block.textContent = ev.text || "(無題)";
+                    block.style.backgroundColor = ev.color.bg;
+                    block.style.color = ev.color.text;
+                    
+                    const targetCell = document.querySelector(`.schedule-cell[data-date="${ev.date}"][data-index="${ev.startIndex}"]`);
+                    if (targetCell) {
+                        const height = (ev.endIndex - ev.startIndex + 1) * 48;
+                        block.style.top = `${targetCell.offsetTop}px`;
+                        block.style.left = `${targetCell.offsetLeft}px`;
+                        block.style.width = `${targetCell.offsetWidth - 4}px`;
+                        block.style.height = `${height - 2}px`;
+                        block.style.margin = '1px';
+                    }
+                    block.onclick = (e) => {
+                        e.stopPropagation();
+                        openEditModal(ev);
+                    };
+                    gridBody.appendChild(block);
+                }
+            });
+        }
+
+        datePicker.onchange = renderGrid;
+        window.onresize = renderEvents;
+        window.onload = startApp;
+    </script>
+</body>
+</html>
