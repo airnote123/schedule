@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PLANNER Pro - Clean Style</title>
+    <title>PLANNER Pro - Correct Colors</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
@@ -74,6 +74,10 @@
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             color: #2563eb;
         }
+
+        /* 土日の色設定を復活 */
+        .day-sun { color: #ef4444 !important; } /* 日曜日: 赤 */
+        .day-sat { color: #3b82f6 !important; } /* 土曜日: 青 */
 
         .modal-color-dot {
             width: 36px;
@@ -190,7 +194,6 @@
         const gridBody = document.getElementById('gridBody');
         const syncIndicator = document.getElementById('syncIndicator');
 
-        // 初期日付の正確な設定 (JST)
         function initDate() {
             const now = new Date();
             const y = now.getFullYear();
@@ -280,8 +283,10 @@
                 const dayLabel = document.createElement('div');
                 dayLabel.className = `py-3 text-center border-r flex flex-col justify-center font-black`;
                 
-                // 日付の色を常に統一 (青や赤を解除)
-                let colorClass = 'text-gray-800';
+                // 土日は色をつけるが、平日は黒にするロジック
+                let colorClass = 'text-gray-800'; 
+                if (dayOfWeek === 0) colorClass = 'day-sun'; // 日曜: 赤
+                if (dayOfWeek === 6) colorClass = 'day-sat'; // 土曜: 青
 
                 dayLabel.innerHTML = `
                     <span class="text-[9px] uppercase tracking-tighter text-gray-400">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dayOfWeek]}</span>
