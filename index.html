@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PLANNER Pro - Correct Colors</title>
+    <title>PLANNER Pro - Stable Version</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
@@ -75,7 +75,7 @@
             color: #2563eb;
         }
 
-        /* 土日の色設定を復活 */
+        /* 土日の色設定 */
         .day-sun { color: #ef4444 !important; } /* 日曜日: 赤 */
         .day-sat { color: #3b82f6 !important; } /* 土曜日: 青 */
 
@@ -109,6 +109,7 @@
 <body class="bg-gray-50 text-gray-900 min-h-screen select-none overflow-x-hidden">
 
     <div class="max-w-7xl mx-auto bg-white shadow-lg min-h-screen flex flex-col border-x">
+        <!-- Header -->
         <header class="p-3 border-b bg-white flex flex-col gap-3 sticky top-0 z-40 shadow-sm">
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-3">
@@ -135,12 +136,14 @@
             </div>
         </header>
 
+        <!-- Grid -->
         <div class="flex-grow overflow-auto" id="scrollContainer">
             <div id="gridHeader" class="grid-header"></div>
             <div id="gridBody" class="grid-body"></div>
         </div>
     </div>
 
+    <!-- Modal -->
     <div id="editModal" class="fixed inset-0 bg-black/60 hidden z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-sm">
         <div class="bg-white rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-md shadow-2xl border border-gray-100">
             <div class="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6 sm:hidden"></div>
@@ -194,6 +197,7 @@
         const gridBody = document.getElementById('gridBody');
         const syncIndicator = document.getElementById('syncIndicator');
 
+        // 正確な日付初期化 (日本時間)
         function initDate() {
             const now = new Date();
             const y = now.getFullYear();
@@ -201,9 +205,9 @@
             const d = String(now.getDate()).padStart(2, '0');
             datePicker.value = `${y}-${m}-${d}`;
         }
-        initDate();
 
         async function startApp() {
+            initDate();
             renderGrid();
             await fetchEvents();
             setupRealtimeSync();
@@ -233,14 +237,22 @@
         }
 
         async function fetchEvents() {
-            const { data } = await supabaseClient.from('events').select('*');
+            syncIndicator.textContent = "Syncing...";
+            const { data, error } = await supabaseClient.from('events').select('*');
+            if (error) {
+                console.error("Fetch error:", error);
+                syncIndicator.textContent = "Error";
+                return;
+            }
             events = data || [];
             renderEvents();
             syncIndicator.textContent = "Synced";
         }
 
         function setupRealtimeSync() {
-            supabaseClient.channel('db-changes').on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, fetchEvents).subscribe();
+            supabaseClient.channel('db-changes')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, fetchEvents)
+                .subscribe();
         }
 
         function changeView(view) {
@@ -283,8 +295,7 @@
                 const dayLabel = document.createElement('div');
                 dayLabel.className = `py-3 text-center border-r flex flex-col justify-center font-black`;
                 
-                // 土日は色をつけるが、平日は黒にするロジック
-                let colorClass = 'text-gray-800'; 
+                let colorClass = 'text-gray-800'; // 平日は黒（ハイライトなし）
                 if (dayOfWeek === 0) colorClass = 'day-sun'; // 日曜: 赤
                 if (dayOfWeek === 6) colorClass = 'day-sat'; // 土曜: 青
 
@@ -379,14 +390,16 @@
         async function saveEvent() {
             currentEditingEvent.text = document.getElementById('eventNote').value;
             currentEditingEvent.color = tempSelectedColor;
-            await supabaseClient.from('events').upsert(currentEditingEvent);
+            const { error } = await supabaseClient.from('events').upsert(currentEditingEvent);
+            if (error) console.error("Save error:", error);
             closeModal();
             fetchEvents();
         }
 
         async function deleteEvent() {
             if (!currentEditingEvent) return;
-            await supabaseClient.from('events').delete().eq('id', currentEditingEvent.id);
+            const { error } = await supabaseClient.from('events').delete().eq('id', currentEditingEvent.id);
+            if (error) console.error("Delete error:", error);
             closeModal();
             fetchEvents();
         }
