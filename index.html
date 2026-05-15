@@ -8,7 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         :root {
-            --cell-height: 48px;
+            --cell-height: 60px;
             --time-col-width: 60px;
         }
         .grid-header {
@@ -36,6 +36,8 @@
             color: #9ca3af;
             background: #f9fafb;
             font-weight: 600;
+            position: relative;
+            z-index: 5;
         }
         .schedule-cell {
             height: var(--cell-height);
@@ -99,9 +101,9 @@
             animation: pulse 2s infinite;
         }
         @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
-            70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        /* Grid */
+        .flex-grow.overflow-auto {
+            padding-bottom: 80px;
         }
     </style>
 </head>
@@ -321,9 +323,12 @@
             }
 
             gridBody.innerHTML = '';
-            for (let hour = 0; hour < 24; hour++) {
+            // Changed loop to include 24:00 (hour <= 24 and break at 24:30)
+            for (let hour = 0; hour <= 24; hour++) {
                 for (let min of [0, 30]) {
-                    const timeStr = `${hour.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`;
+                    if (hour === 24 && min === 30) break; // We only need 24:00
+
+                    const timeStr = hour === 24 ? 'コメント' : `${hour.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`;
                     const timeLabel = document.createElement('div');
                     timeLabel.className = 'time-cell';
                     timeLabel.textContent = min === 0 ? timeStr : '';
@@ -432,6 +437,8 @@
             const daysToShow = currentView === 'day' ? 1 : 7;
             const endDate = new Date(startDate);
             endDate.setDate(startDate.getDate() + daysToShow);
+            
+            const cellHeight = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cell-height')) || 60;
 
             events.forEach(ev => {
                 if (ev.category !== currentMode) return;
@@ -446,7 +453,7 @@
                     
                     const targetCell = document.querySelector(`.schedule-cell[data-date="${ev.date}"][data-index="${ev.startIndex}"]`);
                     if (targetCell) {
-                        const height = (ev.endIndex - ev.startIndex + 1) * 48;
+                        const height = (ev.endIndex - ev.startIndex + 1) * cellHeight;
                         block.style.top = `${targetCell.offsetTop}px`;
                         block.style.left = `${targetCell.offsetLeft}px`;
                         block.style.width = `${targetCell.offsetWidth - 4}px`;
