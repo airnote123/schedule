@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PLANNER Pro - Final</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root {
+            --cell-height: 48px;
+            --memo-height: 96px; 
+            --time-col-width: 60px;
+        }
+        .grid-header {
+            display: grid;
+            grid-template-columns: var(--time-col-width) repeat(var(--cols), 1fr);
+            border-bottom: 2px solid #e5e7eb;
+            position: sticky;
+            top: 0;
+            z-index: 30;
+            background: #f9fafb;
+        }
+        .grid-body {
+            display: grid;
+            grid-template-columns: var(--time-col-width) repeat(var(--cols), 1fr);
+            position: relative;
+        }
+        .time-cell {
+            height: var(--cell-height);
+            border-right: 2px solid #e5e7eb;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            color: #9ca3af;
+            background: #f9fafb;
+            font-weight: 600;
+        }
+        .memo-label-cell {
+            height: var(--memo-height);
+            border-right: 2px solid #e5e7eb;
+            border-bottom: 2px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f1f5f9;
+            color: #475569;
+            font-weight: 900;
+            font-size: 0.75rem;
+            writing-mode: vertical-lr;
+            letter-spacing: 0.2em;
+        }
+        .schedule-cell {
+            height: var(--cell-height);
+            border-right: 1px solid #e5e7eb;
+            border-bottom: 1px solid #e5e7eb;
+            cursor: pointer;
+            position: relative;
+            background: white;
+            transition: background 0.2s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .memo-cell {
+            height: var(--memo-height);
+            background: #fcfcfc;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        .schedule-cell.selected {
+            background-color: #dbeafe !important;
+            box-shadow: inset 0 0 0 2px #3b82f6;
+            z-index: 10;
+        }
+        .event-block {
+            position: absolute;
+            z-index: 20;
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 0.85rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid rgba(0,0,0,0.08);
+            font-weight: 600;
+            line-height: 1.2;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .view-tab.active {
+            background: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            color: #2563eb;
+        }
+        .day-sun { color: #ef4444 !important; }
+        .day-sat { color: #3b82f6 !important; }
+        .modal-color-dot {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 3px solid transparent;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-color-dot.active {
+            border-color: #3b82f6;
+            transform: scale(1.15);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen select-none overflow-x-hidden font-sans">
+
+    <div class="max-w-7xl mx-auto bg-white shadow-lg min-h-screen flex flex-col border-x">
+        <header class="p-3 border-b bg-white flex flex-col gap-3 sticky top-0 z-40 shadow-sm">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">P</div>
+                    <div class="flex flex-col">
+                        <h1 id="appTitle" class="text-[10px] font-black text-gray-400 uppercase tracking-tighter leading-none hidden sm:block">PLANNER Pro</h1>
+                        <div id="clockDisplay" class="text-lg font-mono font-black text-gray-800 leading-none mt-1">00:00:00</div>
+                    </div>
+                    <input type="date" id="datePicker" class="border rounded-lg px-2 py-1 text-sm font-bold bg-gray-50 outline-none ml-2">
+                </div>
+                
+                <div class="flex gap-2">
+                    <div class="flex bg-gray-100 rounded-xl p-1 gap-1">
+                        <button onclick="changeMode('plan')" id="planTab" class="view-tab px-4 py-1 text-xs font-bold rounded-lg active">予定</button>
+                        <button onclick="changeMode('log')" id="logTab" class="view-tab px-4 py-1 text-xs font-bold rounded-lg">記録</button>
+                    </div>
+                    <div class="flex bg-gray-100 rounded-xl p-1 gap-1">
+                        <button onclick="changeView('day')" id="dayTab" class="view-tab px-4 py-1 text-xs font-bold rounded-lg active">1日</button>
+                        <button onclick="changeView('week')" id="weekTab" class="view-tab px-4 py-1 text-xs font-bold rounded-lg">週間</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between border-t pt-2">
+                <div class="flex gap-2">
+                    <button id="selectionModeBtn" onclick="toggleSelectionMode()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold flex items-center gap-2 transition-all">
+                        <span id="selectIcon">🔘</span> 範囲を選択
+                    </button>
+                    <button id="actionBtn" onclick="handleAction()" class="hidden px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-black shadow-lg shadow-blue-100 transition-all">
+                        結合して作成
+                    </button>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div id="heartbeat" class="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <div id="syncIndicator" class="text-[9px] font-mono text-gray-400 uppercase tracking-widest">Connect...</div>
+                </div>
+            </div>
+        </header>
+
+        <div class="flex-grow overflow-auto" id="scrollContainer">
+            <div id="gridHeader" class="grid-header"></div>
+            <div id="gridBody" class="grid-body"></div>
+        </div>
+    </div>
+
+    <div id="editModal" class="fixed inset-0 bg-black/60 hidden z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-sm">
+        <div class="bg-white rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-md shadow-2xl border border-gray-100">
+            <div class="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6 sm:hidden"></div>
+            <h3 class="text-xl font-black text-gray-800 mb-6" id="modalTitle">登録</h3>
+            
+            <label id="modalLabel" class="block text-xs font-black text-gray-400 uppercase tracking-wider mb-2">内容</label>
+            <textarea id="eventNote" class="w-full border-2 border-gray-100 p-4 rounded-2xl mb-6 h-32 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-gray-50 resize-none font-medium" placeholder="内容を入力..."></textarea>
+            
+            <label class="block text-xs font-black text-gray-400 uppercase tracking-wider mb-2">カラー選択</label>
+            <div class="grid grid-cols-5 gap-3 mb-8" id="modalColorPalette"></div>
+
+            <div class="flex flex-col gap-3">
+                <button onclick="saveEvent()" class="w-full bg-blue-600 text-white py-4 rounded-2xl text-base font-black hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all active:scale-95">
+                    保存する
+                </button>
+                <div class="flex justify-between items-center mt-2 px-1">
+                    <button id="deleteBtn" onclick="deleteEvent()" class="text-red-500 text-sm font-bold opacity-0 pointer-events-none transition-opacity">削除する</button>
+                    <button onclick="closeModal()" class="text-gray-400 text-sm font-bold">キャンセル</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://qfzyrogwyjbzbblnvqzy.supabase.co/';
+        const SUPABASE_KEY = 'sb_publishable_tXLLvKe_L-27OsGU-GH3Zw_176oxBqw';
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        const colors = [
+            { bg: '#E0F2FE', text: '#0369A1', hex: '#0ea5e9' },
+            { bg: '#DCFCE7', text: '#15803D', hex: '#22c55e' },
+            { bg: '#FEF9C3', text: '#854d0e', hex: '#eab308' },
+            { bg: '#FFEDD5', text: '#9a3412', hex: '#f97316' },
+            { bg: '#FEE2E2', text: '#991b1b', hex: '#ef4444' },
+            { bg: '#F3E8FF', text: '#6b21a8', hex: '#a855f7' },
+            { bg: '#FAE8FF', text: '#86198f', hex: '#d946ef' },
+            { bg: '#E0E7FF', text: '#3730a3', hex: '#6366f1' },
+            { bg: '#F1F5F9', text: '#334155', hex: '#64748b' },
+            { bg: '#FEF2F2', text: '#9f1239', hex: '#fb7185' }
+        ];
+
+        let currentView = 'day';
+        let currentMode = 'plan';
+        let isSelectionMode = false;
+        let selectedCells = [];
+        let events = [];
+        let currentEditingEvent = null;
+        let tempSelectedColor = colors[0];
+
+        const datePicker = document.getElementById('datePicker');
+        const gridHeader = document.getElementById('gridHeader');
+        const gridBody = document.getElementById('gridBody');
+        const syncIndicator = document.getElementById('syncIndicator');
+
+        window.onload = startApp;
+
+        async function startApp() {
+            initDate();
+            renderGrid();
+            initModalColors();
+            await fetchEvents();
+            setupRealtimeSync(); // リアルタイム同期を有効化
+            setInterval(systemTick, 1000);
+            systemTick();
+        }
+
+        function initDate() {
+            const now = new Date();
+            datePicker.value = now.toISOString().split('T')[0];
+            datePicker.onchange = () => {
+                renderGrid();
+                fetchEvents();
+            };
+        }
+
+        function systemTick() {
+            const now = new Date();
+            document.getElementById('clockDisplay').textContent = now.toLocaleTimeString('ja-JP', { hour12: false });
+            const hb = document.getElementById('heartbeat');
+            hb.style.opacity = hb.style.opacity === "0.5" ? "1" : "0.5";
+        }
+
+        function setupRealtimeSync() {
+            supabaseClient
+                .channel('schema-db-changes')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'events_planner' }, (payload) => {
+                    console.log('Realtime change detected:', payload);
+                    fetchEvents();
+                })
+                .subscribe((status) => {
+                    syncIndicator.textContent = status === 'SUBSCRIBED' ? 'Realtime' : 'Reconnecting...';
+                    syncIndicator.className = status === 'SUBSCRIBED' ? 
+                        'text-[9px] font-mono text-green-500 uppercase tracking-widest' : 
+                        'text-[9px] font-mono text-orange-400 uppercase tracking-widest';
+                });
+        }
+
+        async function fetchEvents() {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('events_planner')
+                    .select('*')
+                    .eq('date', datePicker.value);
+
+                if (error) throw error;
+                events = data || [];
+                renderEvents();
+            } catch (err) {
+                console.error('Fetch error:', err);
+            }
+        }
+
+        function renderGrid() {
+            const cols = currentView === 'day' ? 1 : 7;
+            document.documentElement.style.setProperty('--cols', cols);
+            gridHeader.innerHTML = '<div class="bg-gray-50 border-r-2 border-b-2"></div>';
+            gridBody.innerHTML = '';
+
+            const startDate = new Date(datePicker.value);
+            if (currentView === 'week') {
+                startDate.setDate(startDate.getDate() - startDate.getDay());
+            }
+
+            for (let i = 0; i < cols; i++) {
+                const d = new Date(startDate);
+                d.setDate(d.getDate() + i);
+                const isSun = d.getDay() === 0;
+                const isSat = d.getDay() === 6;
+                const dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
+                const dayStr = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+                
+                const headerCell = document.createElement('div');
+                headerCell.className = `p-2 text-center border-r border-b-2 bg-white flex flex-col justify-center items-center ${isSun ? 'day-sun' : isSat ? 'day-sat' : ''}`;
+                headerCell.innerHTML = `<span class="text-[10px] font-black opacity-50 leading-none">${dayStr}</span><span class="text-sm font-black">${dateStr}</span>`;
+                gridHeader.appendChild(headerCell);
+            }
+
+            // 0:00 - 23:00
+            for (let hour = 0; hour < 24; hour++) {
+                const timeCell = document.createElement('div');
+                timeCell.className = 'time-cell';
+                timeCell.textContent = `${hour}:00`;
+                gridBody.appendChild(timeCell);
+
+                for (let col = 0; col < cols; col++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'schedule-cell';
+                    cell.dataset.hour = hour;
+                    cell.dataset.col = col;
+                    cell.onclick = () => onCellClick(hour, col);
+                    gridBody.appendChild(cell);
+                }
+            }
+
+            // メモ行（カタカナに統一）
+            const memoLabel = document.createElement('div');
+            memoLabel.className = 'memo-label-cell';
+            memoLabel.textContent = 'メモ';
+            gridBody.appendChild(memoLabel);
+
+            for (let col = 0; col < cols; col++) {
+                const cell = document.createElement('div');
+                cell.className = 'memo-cell p-2 overflow-auto border-r';
+                cell.dataset.isMemo = "true";
+                cell.dataset.col = col;
+                cell.onclick = () => onCellClick(-1, col);
+                gridBody.appendChild(cell);
+            }
+        }
+
+        function renderEvents() {
+            document.querySelectorAll('.event-block').forEach(el => el.remove());
+            document.querySelectorAll('.memo-cell').forEach(el => el.innerHTML = '');
+
+            // メモは「予定」「記録」に関わらず共通で表示
+            const modeFilteredEvents = events.filter(e => e.is_memo || e.mode === currentMode);
+
+            modeFilteredEvents.forEach(ev => {
+                const colIndex = getColIndex(ev.date);
+                if (colIndex === -1) return;
+
+                if (ev.is_memo) {
+                    const cell = document.querySelector(`.memo-cell[data-col="${colIndex}"]`);
+                    if (cell) {
+                        const block = document.createElement('div');
+                        block.className = 'h-full w-full p-2 rounded-lg text-xs font-bold cursor-pointer';
+                        block.style.backgroundColor = ev.color_bg;
+                        block.style.color = ev.color_text;
+                        block.textContent = ev.note;
+                        block.onclick = (e) => {
+                            e.stopPropagation();
+                            openEditModal(ev);
+                        };
+                        cell.appendChild(block);
+                    }
+                } else {
+                    const startH = ev.start_hour;
+                    const endH = ev.end_hour || (startH + 1);
+                    const duration = endH - startH;
+                    const top = startH * 48;
+                    const height = duration * 48;
+
+                    const block = document.createElement('div');
+                    block.className = 'event-block';
+                    block.style.top = `${top}px`;
+                    block.style.height = `${height}px`;
+                    block.style.left = `calc(${60 + (colIndex * (100 / (currentView === 'day' ? 1 : 7)))}% + 2px)`;
+                    block.style.width = `calc(${(100 / (currentView === 'day' ? 1 : 7))}% - 4px)`;
+                    block.style.backgroundColor = ev.color_bg;
+                    block.style.color = ev.color_text;
+                    block.textContent = ev.note;
+                    block.onclick = (e) => {
+                        e.stopPropagation();
+                        openEditModal(ev);
+                    };
+                    gridBody.appendChild(block);
+                }
+            });
+        }
+
+        function getColIndex(dateStr) {
+            const baseDate = new Date(datePicker.value);
+            if (currentView === 'day') return dateStr === datePicker.value ? 0 : -1;
+            baseDate.setDate(baseDate.getDate() - baseDate.getDay());
+            const targetDate = new Date(dateStr);
+            const diff = Math.round((targetDate - baseDate) / (1000 * 60 * 60 * 24));
+            return (diff >= 0 && diff < 7) ? diff : -1;
+        }
+
+        function toggleSelectionMode() {
+            isSelectionMode = !isSelectionMode;
+            selectedCells = [];
+            document.querySelectorAll('.schedule-cell').forEach(c => c.classList.remove('selected'));
+            
+            const btn = document.getElementById('selectionModeBtn');
+            btn.className = isSelectionMode ? 
+                "px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold flex items-center gap-2 selection-active-btn" : 
+                "px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold flex items-center gap-2";
+            document.getElementById('selectIcon').textContent = isSelectionMode ? '✅' : '🔘';
+            document.getElementById('actionBtn').classList.toggle('hidden', !isSelectionMode);
+        }
+
+        function onCellClick(hour, col) {
+            const d = new Date(datePicker.value);
+            if (currentView === 'week') d.setDate(d.getDate() - d.getDay() + col);
+            const dateStr = d.toISOString().split('T')[0];
+
+            if (isSelectionMode && hour !== -1) {
+                const cell = document.querySelector(`.schedule-cell[data-hour="${hour}"][data-col="${col}"]`);
+                const idx = selectedCells.findIndex(c => c.hour === hour && c.date === dateStr);
+                if (idx > -1) {
+                    selectedCells.splice(idx, 1);
+                    cell.classList.remove('selected');
+                } else {
+                    selectedCells.push({ hour, date: dateStr });
+                    cell.classList.add('selected');
+                }
+            } else {
+                if (hour === -1) {
+                    const existing = events.find(e => e.is_memo && e.date === dateStr);
+                    openEditModal(existing || { is_memo: true, date: dateStr, note: '', color_bg: colors[0].bg, color_text: colors[0].text });
+                } else {
+                    openEditModal({ start_hour: hour, end_hour: hour + 1, date: dateStr, note: '', color_bg: colors[0].bg, color_text: colors[0].text, mode: currentMode });
+                }
+            }
+        }
+
+        function handleAction() {
+            if (selectedCells.length === 0) return;
+            selectedCells.sort((a, b) => a.hour - b.hour);
+            const start = selectedCells[0].hour;
+            const end = selectedCells[selectedCells.length - 1].hour + 1;
+            openEditModal({ start_hour: start, end_hour: end, date: selectedCells[0].date, note: '', color_bg: colors[0].bg, color_text: colors[0].text, mode: currentMode });
+            toggleSelectionMode();
+        }
+
+        function openEditModal(ev) {
+            currentEditingEvent = ev;
+            tempSelectedColor = colors.find(c => c.bg === ev.color_bg) || colors[0];
+            document.getElementById('eventNote').value = ev.note || '';
+            document.getElementById('modalTitle').textContent = ev.is_memo ? 'メモ登録' : (ev.id ? '予定の編集' : '予定の登録');
+            document.getElementById('modalLabel').textContent = ev.is_memo ? 'メモ内容' : '内容';
+            document.getElementById('deleteBtn').style.opacity = ev.id ? '1' : '0';
+            document.getElementById('deleteBtn').style.pointerEvents = ev.id ? 'auto' : 'none';
+            
+            renderColorPalette();
+            document.getElementById('editModal').classList.remove('hidden');
+            setTimeout(() => document.getElementById('eventNote').focus(), 100);
+        }
+
+        function closeModal() {
+            document.getElementById('editModal').classList.add('hidden');
+            currentEditingEvent = null;
+        }
+
+        function initModalColors() {
+            renderColorPalette();
+        }
+
+        function renderColorPalette() {
+            const palette = document.getElementById('modalColorPalette');
+            palette.innerHTML = '';
+            colors.forEach(c => {
+                const dot = document.createElement('div');
+                dot.className = `modal-color-dot ${tempSelectedColor.hex === c.hex ? 'active' : ''}`;
+                dot.style.backgroundColor = c.hex;
+                dot.onclick = () => {
+                    tempSelectedColor = c;
+                    renderColorPalette();
+                };
+                if (tempSelectedColor.hex === c.hex) {
+                    dot.innerHTML = '<span class="text-white text-xs">✓</span>';
+                }
+                palette.appendChild(dot);
+            });
+        }
+
+        async function saveEvent() {
+            const note = document.getElementById('eventNote').value.trim();
+            if (!note) return closeModal();
+
+            const payload = {
+                ...currentEditingEvent,
+                note: note,
+                color_bg: tempSelectedColor.bg,
+                color_text: tempSelectedColor.text
+            };
+
+            syncIndicator.textContent = "Saving...";
+            const { error } = await supabaseClient.from('events_planner').upsert(payload);
+            
+            if (error) {
+                console.error('Save error:', error);
+            } else {
+                closeModal();
+                fetchEvents();
+            }
+        }
+
+        async function deleteEvent() {
+            if (!currentEditingEvent?.id) return;
+            syncIndicator.textContent = "Deleting...";
+            const { error } = await supabaseClient.from('events_planner').delete().eq('id', currentEditingEvent.id);
+            if (error) console.error('Delete error:', error);
+            closeModal();
+            fetchEvents();
+        }
+
+        function changeMode(m) {
+            currentMode = m;
+            document.getElementById('planTab').classList.toggle('active', m === 'plan');
+            document.getElementById('logTab').classList.toggle('active', m === 'log');
+            document.getElementById('appTitle').textContent = m === 'plan' ? 'PLANNER Pro (予定)' : 'PLANNER Pro (記録)';
+            renderEvents();
+        }
+
+        function changeView(v) {
+            currentView = v;
+            document.getElementById('dayTab').classList.toggle('active', v === 'day');
+            document.getElementById('weekTab').classList.toggle('active', v === 'week');
+            renderGrid();
+            renderEvents();
+        }
+    </script>
+</body>
+</html>
