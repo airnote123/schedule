@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PLANNER Pro AI</title>
+    <!-- Tailwind CSSをCDNから読み込み -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- ヘッダー -->
+    <header class="bg-blue-600 text-white p-4 shadow-md flex justify-between items-center">
+        <h1 class="font-bold text-xl">PLANNER Pro AI</h1>
+        <button id="toggleChat" class="bg-white text-blue-600 px-4 py-2 rounded-lg font-bold text-sm shadow-sm hover:bg-gray-100">AIアシスタントを表示</button>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <main class="p-4 flex gap-4">
+        <!-- スケジュールリストエリア -->
+        <section id="scheduleContainer" class="flex-grow bg-white p-6 rounded-xl shadow-sm border min-h-[500px]">
+            <h2 class="font-bold text-lg mb-4 text-gray-700">本日のスケジュール</h2>
+            <div id="eventList" class="space-y-3">
+                <p class="text-gray-400 italic">予定はまだありません。「AIアシスタント」から追加してください。</p>
+            </div>
+        </section>
+
+        <!-- AIチャットエリア -->
+        <aside id="chatBox" class="w-80 bg-white rounded-xl shadow-lg border flex flex-col h-[500px] hidden">
+            <div class="p-4 border-b font-bold text-sm bg-gray-50 rounded-t-xl text-gray-600">AIスケジュール作成</div>
+            <div id="chatMessages" class="flex-grow p-4 space-y-3 overflow-y-auto text-sm">
+                <div class="text-left bg-gray-100 p-3 rounded-lg text-gray-700">こんにちは！予定を追加したい時間を教えてください。</div>
+            </div>
+            <div class="p-4 border-t flex gap-2">
+                <input id="chatInput" type="text" class="flex-grow p-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-400" placeholder="例：15時にミーティング">
+                <button id="sendBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700">送信</button>
+            </div>
+        </aside>
+    </main>
+
+    <script>
+        const toggleChatBtn = document.getElementById('toggleChat');
+        const chatBox = document.getElementById('chatBox');
+        const chatInput = document.getElementById('chatInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const chatMessages = document.getElementById('chatMessages');
+        const eventList = document.getElementById('eventList');
+
+        // チャットの開閉
+        toggleChatBtn.addEventListener('click', () => {
+            chatBox.classList.toggle('hidden');
+            toggleChatBtn.textContent = chatBox.classList.contains('hidden') ? 'AIアシスタントを表示' : 'AIアシスタントを隠す';
+        });
+
+        // メッセージ送信ロジック
+        sendBtn.addEventListener('click', () => {
+            const text = chatInput.value.trim();
+            if (!text) return;
+            
+            // ユーザーメッセージ
+            const userMsg = document.createElement('div');
+            userMsg.className = 'text-right bg-blue-100 p-2 rounded-lg text-gray-800';
+            userMsg.textContent = text;
+            chatMessages.appendChild(userMsg);
+            chatInput.value = '';
+
+            // AIの応答処理
+            setTimeout(() => {
+                const aiMsg = document.createElement('div');
+                aiMsg.className = 'text-left bg-gray-100 p-2 rounded-lg text-gray-800';
+                aiMsg.textContent = `「${text}」をスケジュールに追加しました。`;
+                chatMessages.appendChild(aiMsg);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+
+                // スケジュール追加
+                if (eventList.querySelector('p')) eventList.innerHTML = '';
+                const eventItem = document.createElement('div');
+                eventItem.className = 'p-4 border-l-4 border-blue-500 bg-gray-50 rounded shadow-sm';
+                eventItem.innerHTML = `<p class="font-bold text-gray-800">${text}</p><p class="text-xs text-gray-500">自動生成された予定</p>`;
+                eventList.appendChild(eventItem);
+            }, 600);
+        });
+    </script>
+</body>
+</html>
